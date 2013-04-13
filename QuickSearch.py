@@ -1,6 +1,7 @@
 from collections import defaultdict
 import os
 import re
+
 import sublime
 import sublime_plugin
 
@@ -10,68 +11,50 @@ class FindInFileCommand(sublime_plugin.TextCommand):
     """
 
     def run(self, *args):
-        resultsPane = self._getResultsPane()
-        if resultsPane is None:
+        self.resultsPane = self._getResultsPane()
+        if self.resultsPane is None:
             return False
 
-        toFind = re.escape(self._getSelectedWord())
+        self._callbackWithWordToFind(self._doFind)
 
-        edit = resultsPane.begin_edit()
-        try:
-            regions = self.view.find_all('%s' % toFind)
+
+    def _callbackWithWordToFind(self, callback):
+        if len(self.view.sel()) == 1 and self.view.sel()[0].size() > 0:
+            callback(self.view.substr(self.view.sel()[0]))
+        else:
+            self.view.window().show_input_panel('Enter word to find:', '', 
+                    callback, None, None)
+
+
+    def _doFind(self, wordToFind):
+        toFind = re.escape(wordToFind)
+        regions = self.view.find_all(toFind)
+        lines = defaultdict(list)
+        for r in regions:
+            line = self.view.rowcol(r.begin())[0]
+            lines[line] += [r]
+            for i in range(max(0, line - 2), min(self._lineCount(), line + 3)):
+                # merely addressing the lines will ensure they are included
+                # in the output
+                lines[i]
+
+        toAppend = [self.view.file_name() + ":"]
+        lastLine = None
+        for lineNumber in sorted(lines):
+            if lastLine and lineNumber > lastLine + 1:
+                toAppend.append(' ' * (5 - len(str(lineNumber)))
+                        + '.' * len(str(lineNumber)))
+            lastLine = lineNumber
+
+            lineText = self.view.substr(self.view.line(
+                    self.view.text_point(lineNumber, 0)))
             
-            resultsPane.erase(edit, sublime.Region(0, resultsPane.size()))
+            toAppend.append(self._format('%s' % (lineNumber + 1),
+                    lineText, bool(lines[lineNumber])))
 
-            self._append(resultsPane, edit, self.view.file_name() + ":\n")
-            if toFind is None:
-                return False
+        self.resultsPane.run_command('show_results',
+                {'toAppend': toAppend, 'toHighlight': toFind})
 
-            lines = defaultdict(list)
-            for r in regions:
-                line = self.view.rowcol(r.begin())[0]
-                lines[line] += [r]
-                for i in range(line - 2, line + 3):
-                    # merely addressing the lines will ensure they are included
-                    # in the output
-                    lines[i]
-
-            toAppend = []
-            lastLine = None
-            for lineNumber in sorted(lines):
-                if lastLine and lineNumber > lastLine + 1:
-                    toAppend.append('\n   ..\n')
-                lastLine = lineNumber
-
-                lineText = self.view.substr(self.view.line(
-                        self.view.text_point(lineNumber, 0)))
-                
-
-                toAppend.append(self._format('%s' % (lineNumber + 1),
-                        lineText, bool(lines[lineNumber])))
-
-            self._append(resultsPane, edit, '\n'.join(toAppend))
-        finally:
-            resultsPane.end_edit(edit)
-
-        toHighlight = resultsPane.find_all(toFind)
-        resultsPane.add_regions('find_results', toHighlight, 'found', '', 
-                sublime.DRAW_OUTLINED)
-
-
-    def _getSelectedWord(self):
-        return (self.view.substr(self.view.sel()[0]) 
-                if len(self.view.sel()) == 1
-                else None)
-
-
-    def _doFind(self, toFind):
-        selections = self.view.sel()
-        if len(selections) != 1:
-            return None
-
-        toFind = self.view.substr(selections[0])
-
-        return self.view.find_all(toFind)
 
     def _getResultsPane(self):
         """Returns the results pane; creating one if necessary
@@ -94,7 +77,7 @@ class FindInFileCommand(sublime_plugin.TextCommand):
 
         window.focus_view(v)
         window.focus_view(self.view)
-        return resultsPane[0]
+        return v
 
 
     def _format(self, lineNumber, line, match = False):
@@ -105,7 +88,15 @@ class FindInFileCommand(sublime_plugin.TextCommand):
                 colon = colon, text = line, sp = spacer)
 
 
-    def _append(self, view, edit, text, newline = True):
-        view.insert(edit, view.size(), text)
-        if newline:
-            view.insert(edit, view.size(), '\n')
+    def _lineCount(self):
+        return self.view.rowcol(self.view.size())[0]
+
+
+class ShowResultsCommand(sublime_plugin.TextCommand):
+    def run(self, edit, toAppend, toHighlight):
+        self.view.erase(edit, sublime.Region(0, self.view.size()))
+        self.view.insert(edit, self.view.size(), '\n'.join(toAppend))
+
+        regions = self.view.find_all(toHighlight)
+        self.view.add_regions('find_results', regions, 'found', '', 
+                sublime.DRAW_OUTLINED)
