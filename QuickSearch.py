@@ -52,7 +52,7 @@ class FindInFileCommand(sublime_plugin.TextCommand):
             toAppend.append(self._format('%s' % (lineNumber + 1),
                     lineText, bool(lines[lineNumber])))
 
-        self.resultsPane.run_command('show_results',
+        self.resultsPane.run_command('show_quick_search_results',
                 {'toAppend': toAppend, 'toHighlight': toFind})
 
 
@@ -92,7 +92,7 @@ class FindInFileCommand(sublime_plugin.TextCommand):
         return self.view.rowcol(self.view.size())[0]
 
 
-class ShowResultsCommand(sublime_plugin.TextCommand):
+class ShowQuickSearchResultsCommand(sublime_plugin.TextCommand):
     def run(self, edit, toAppend, toHighlight):
         self.view.erase(edit, sublime.Region(0, self.view.size()))
         self.view.insert(edit, self.view.size(), '\n'.join(toAppend))
